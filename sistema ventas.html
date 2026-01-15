@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Cotización OCR Offline</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+/* ================== 屏幕显示（编辑态，完全保留） ================== */
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    margin: 20px;
+    color: #000;
+}
+h1 {
+    text-align: center;
+}
+input, button {
+    padding: 5px;
+    margin: 4px;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+th, td {
+    border: 1px solid #000;
+    padding: 4px;
+    font-size: 13px;
+}
+th {
+    background: #f0f0f0;
+}
+.right { text-align: right; }
+.center { text-align: center; }
+
+.total-box {
+    width: 300px;
+    float: right;
+    margin-top: 10px;
+}
+.total-box table td {
+    border: none;
+}
+button { cursor: pointer; }
+
+/* ================== 打印专用（无边框 + 修复字面显示） ================== */
+@page {
+    size: A4;
+    margin: 12mm;
+}
+
+@media print {
+
+    /* 不打印交互区域 */
+    #ocrSection,
+    button {
+        display: none !important;
+    }
+
+    html, body {
+        width: 210mm;
+        height: 297mm;
+        margin: 0;
+        padding: 0;
+        font-size: 12px;
+    }
+
+    body {
+        box-sizing: border-box;
+    }
+
+    /* 所有表格取消边框 */
+    table, th, td {
+        border: none !important;
+    }
+
+    /* 输入框打印成纯文字 */
+    input {
+        border: none !important;
+        padding: 0 !important;
+        background: transparent !important;
+        font-size: 12px;
+    }
+
+    /* 表格基础规则 */
+    table {
+        width: 100% !important;
+        page-break-inside: avoid;
+    }
+
+    /* ❗❗关键修复点：ARTICULO 列允许正常换行 */
+    th:nth-child(2),
+    td:nth-child(2) {
+        white-space: normal !important;
+        word-break: break-word !important;
+        overflow: visible !important;
+    }
+
+    /* 数值列紧凑显示（不裁文字） */
+    th:nth-child(6),
+    td:nth-child(6) {
+        width: 18mm !important; /* QTY */
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    th:nth-child(7),
+    td:nth-child(7) {
+        width: 22mm !important; /* QTY BONO */
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    th:nth-child(8),
+    td:nth-child(8) {
+        width: 24mm !important; /* IMPOR */
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    /* 删除按钮列不打印 */
+    th:nth-child(9),
+    td:nth-child(9) {
+        display: none !important;
+    }
+
+    /* 合计区块右对齐 */
+    .total-box {
+        float: none !important;
+        width: 100% !important;
+        margin-top: 10px;
+        text-align: right;
+    }
+
+    .total-box table {
+        width: 320px !important;
+        margin-left: auto;
+    }
+
+    /* 防止浏览器奇怪缩放 */
+    * {
+        transform: none !important;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<button onclick="window.print()">🖨️ Imprimir / Exportar PDF</button>
+
+<h1>AMERICA CAPON S.A.C</h1>
+
+<div class="center" style="font-size:11px; line-height:1.4">
+    批发 · 零售各种副食品<br>
+    配送服务：300索尔内+30索尔配送费，300索尔以上1000以内+20索尔配送费<br>
+    Servicio despacho Lima: compras a 300 soles se recargará 30 soles;<br>
+    menos a 1,000 soles se recargará 20 soles<br><br>
+    Email: VENTAS@AMERICACAPON.PE · Pedidos: 985 776 186 / 908 945 591<br>
+    Jr. Paruro 757 – Cercado · Av. San Luis 1952 – SAN BORJA<br>
+    Av. Pardo N.332 Miraflores · Av. Defensores del Morro N.522 Chorrillos
+</div>
+
+<hr>
+
+<div id="ocrSection">
+<h3>📤 Subir imagen para OCR</h3>
+<input type="file" id="imageInput" accept="image/*">
+<button onclick="runOCR()">Ejecutar OCR</button>
+
+<pre id="ocrText" style="background:#eee; padding:10px; height:150px; overflow:auto;"></pre>
+<hr>
+</div>
+
+<h3 class="center"><u>Cotización de venta</u></h3>
+
+<table>
+<tr>
+<td>Nro Interno: <input id="nro" value="5805547"></td>
+<td class="right">Fecha Reg.: <input id="fecha" value="15/01/2026"></td>
+</tr>
+<tr>
+<td>Almacén: <input id="almacen" value="96 - PISO8 MAYORISTA"></td>
+<td class="right">Registrado por: <input id="registrado" value="AURORA LIN"></td>
+</tr>
+<tr>
+<td>Vendedor: <input id="vendedor" value="AURORA LIN"></td>
+<td class="right">Tipo: <input id="tipo" value="DESCUENTO REGULAR"></td>
+</tr>
+<tr>
+<td>Terminal: <input id="terminal" value="SLP8PEDIDOS03"></td>
+<td class="right">Moneda: <input id="moneda" value="SOLES"></td>
+</tr>
+</table>
+
+<h3>Detalle de artículos</h3>
+
+<table id="itemsTable">
+<thead>
+<tr>
+<th>BARRA</th>
+<th>ARTICULO</th>
+<th>P. LISTA</th>
+<th>%DCTO</th>
+<th>P. FINAL</th>
+<th>QTY</th>
+<th>QTY BONO</th>
+<th>IMPOR</th>
+<th>❌</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<button onclick="addRow()">➕ Agregar producto</button>
+
+<div class="total-box">
+<table>
+<tr>
+<td>Afecto:</td>
+<td class="right"><span id="afecto">0.00</span></td>
+</tr>
+<tr>
+<td>No Afecto:</td>
+<td class="right">0.00</td>
+</tr>
+<tr>
+<td>IGV (18%):</td>
+<td class="right"><span id="igv">0.00</span></td>
+</tr>
+<tr>
+<td><b>Total:</b></td>
+<td class="right"><b><span id="total">0.00</span></b></td>
+</tr>
+</table>
+</div>
+
+<script>
+function addRow(barra="", articulo="", precio=0, dcto=0, qty=1) {
+    const tbody = document.querySelector("#itemsTable tbody");
+    const tr = document.createElement("tr");
+
+    tr.innerHTML = `
+        <td><input value="${barra}"></td>
+        <td><input value="${articulo}"></td>
+        <td><input type="number" value="${precio}" onchange="recalc(this)"></td>
+        <td><input type="number" value="${dcto}" onchange="recalc(this)"></td>
+        <td class="right">0.00</td>
+        <td><input type="number" value="${qty}" onchange="recalc(this)"></td>
+        <td><input type="number" value="0"></td>
+        <td class="right">0.00</td>
+        <td><button onclick="this.parentElement.parentElement.remove();calcTotal()">X</button></td>
+    `;
+    tbody.appendChild(tr);
+    recalc(tr);
+}
+
+function recalc(el) {
+    const tr = el.closest("tr");
+    const precio = parseFloat(tr.children[2].children[0].value) || 0;
+    const dcto = parseFloat(tr.children[3].children[0].value) || 0;
+    const qty = parseFloat(tr.children[5].children[0].value) || 0;
+
+    const final = precio - dcto;
+    const impor = final * qty;
+
+    tr.children[4].innerText = final.toFixed(2);
+    tr.children[7].innerText = impor.toFixed(2);
+
+    calcTotal();
+}
+
+function calcTotal() {
+    let sum = 0;
+    document.querySelectorAll("#itemsTable tbody tr").forEach(tr=>{
+        sum += parseFloat(tr.children[7].innerText) || 0;
+    });
+    document.getElementById("afecto").innerText = sum.toFixed(2);
+    document.getElementById("igv").innerText = (sum * 0.18).toFixed(2);
+    document.getElementById("total").innerText = (sum * 1.18).toFixed(2);
+}
+
+async function runOCR() {
+    const file = document.getElementById("imageInput").files[0];
+    if (!file) return alert("Seleccione una imagen");
+
+    const { data } = await Tesseract.recognize(
+        file,
+        'spa',
+        { logger: m => console.log(m) }
+    );
+
+    document.getElementById("ocrText").innerText = data.text;
+
+    if (data.text.includes("Aceite")) {
+        addRow("7750262001507", "Aceite De Coco Frasco x 350 ml Olivos D", 29.90, 0, 1);
+    }
+    if (data.text.includes("ANCHOVETA")) {
+        addRow("7751144000373", "ANCHOVETA EN SALSA DE TOMATE *170 GR.", 3.30, 0, 1);
+    }
+}
+</script>
+
+</body>
+</html>
